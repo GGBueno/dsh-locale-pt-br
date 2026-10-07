@@ -1,8 +1,15 @@
-// Reextrai o inventário das chaves de UI em inglês de uma instalação do DSH.
-// Faz o parse estático dos objetos dos dicionários (sem `eval`), resolvendo
-// `...spread` e propriedades abreviadas, então fontes já empacotadas são seguras.
+// Extrai o inventário das chaves de UI em inglês de uma instalação do DSH.
 //
-//   node tools/extract-en.mjs <pasta-com-os-client.js> [locale/en.json] [inventory-report.json]
+// Faz o parse estático dos objetos de dicionário (sem `eval`), resolvendo:
+//   - `...spread` de outro objeto local;
+//   - propriedades abreviadas (`{ zh, en }`);
+//   - aliases (`const en$1 = OutroObjeto`);
+//   - valores inline (`{ en: { ... } }`).
+//
+// Também compara os conjuntos de chaves de `zh` e `en` por namespace: o DSH exige
+// dicionários completos nos dois idiomas, então divergência indica extração errada.
+//
+//   node tools/extract-en.mjs <pasta-com-os-client.js> [locale/en.json] [relatorio.json]
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +19,7 @@ const root = process.argv[2];
 const outEn = process.argv[3] ?? join(repoRoot, 'locale/en.json');
 const outReport = process.argv[4] ?? 'inventory-report.json';
 if (!root) {
-  console.error('uso: node tools/extract-en.mjs <pasta-com-os-client.js> [locale/en.json] [inventory-report.json]');
+  console.error('uso: node tools/extract-en.mjs <pasta-com-os-client.js> [locale/en.json] [relatorio.json]');
   process.exit(2);
 }
 
@@ -24,6 +31,8 @@ function walk(dir, acc = []) {
   }
   return acc;
 }
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const skipString = (text, i) => {
   const quote = text[i];
@@ -61,7 +70,7 @@ function readStringLiteral(text, i) {
   return { value: interpolated ? null : raw.replace(/\\(['"`\\])/g, '$1'), end, interpolated };
 }
 
-/** Parse a `{...}` literal into ordered entries: {kind:'pair'|'spread'|'shorthand', key, value, name}. */
+/** Lê `{...}` como entradas ordenadas: pair | spread | shorthand. */
 function parseObjectEntries(text, braceStart) {
   const obj = matchBrace(text, braceStart);
   if (!obj) return null;
@@ -75,83 +84,99 @@ function parseObjectEntries(text, braceStart) {
       const m = /^\.\.\.\s*([A-Za-z_$][\w$]*)/.exec(text.slice(i));
       entries.push({ kind: 'spread', name: m ? m[1] : null });
       i += m ? m[0].length : 3;
+      continue;
+    }
+    let key = null;
+    if (text[i] === '"' || text[i] === "'") {
+      const s = readStringLiteral(text, i);
+      key = s.value;
+      i = s.end;
     } else {
-      let key = null;
-      if (text[i] === '"' || text[i] === "'") {
+      const m = /^([A-Za-z_$][\w$]*)/.exec(text.slice(i));
+      if (!m) { i++; continue; }
+      key = m[1];
+      i += m[0].length;
+    }
+    while (i < end && /\s/.test(text[i])) i++;
+    if (text[i] === ':') {
+      i++;
+      while (i < end && /\s/.test(text[i])) i++;
+      if (text[i] === '{') {
+        const nested = matchBrace(text, i);
+        entries.push({ kind: 'pair', key, inlineStart: i });
+        i = nested ? nested.end + 1 : i + 1;
+      } else if (text[i] === '"' || text[i] === "'" || text[i] === '`') {
         const s = readStringLiteral(text, i);
-        key = s.value;
+        entries.push({ kind: 'pair', key, value: s.value });
         i = s.end;
       } else {
-        const m = /^([A-Za-z_$][\w$]*)/.exec(text.slice(i));
-        if (!m) {
+        let depth = 0;
+        const start = i;
+        while (i < end) {
+          const c = text[i];
+          if (c === '"' || c === "'" || c === '`') { i = skipString(text, i); continue; }
+          if ('([{'.includes(c)) depth++;
+          else if (')]}'.includes(c)) { if (depth === 0) break; depth--; }
+          else if (c === ',' && depth === 0) break;
           i++;
-          continue;
         }
-        key = m[1];
-        i += m[0].length;
+        entries.push({ kind: 'pair', key, expr: text.slice(start, i).trim() });
       }
-      while (i < end && /\s/.test(text[i])) i++;
-      if (text[i] === ':') {
-        i++;
-        while (i < end && /\s/.test(text[i])) i++;
-        if (text[i] === '{') {
-          const nested = matchBrace(text, i);
-          entries.push({ kind: 'pair', key, value: null, nested: true });
-          i = nested ? nested.end + 1 : i + 1;
-        } else if (text[i] === '"' || text[i] === "'" || text[i] === '`') {
-          const s = readStringLiteral(text, i);
-          entries.push({ kind: 'pair', key, value: s.value, interpolated: s.interpolated });
-          i = s.end;
-        } else {
-          // non-literal value expression: consume to the next top-level , or }
-          let depth = 0;
-          const start = i;
-          while (i < end) {
-            const c = text[i];
-            if (c === '"' || c === "'" || c === '`') {
-              i = skipString(text, i);
-              continue;
-            }
-            if ('([{'.includes(c)) depth++;
-            else if (')]}'.includes(c)) {
-              if (depth === 0) break;
-              depth--;
-            } else if (c === ',' && depth === 0) break;
-            i++;
-          }
-          entries.push({ kind: 'pair', key, value: null, expr: text.slice(start, i).trim() });
-        }
-      } else {
-        entries.push({ kind: 'shorthand', name: key });
-      }
+    } else {
+      entries.push({ kind: 'shorthand', name: key });
     }
   }
   return entries;
 }
 
+function findDeclarationStart(text, name) {
+  const re = new RegExp(`(?:const|let|var)\\s+${escapeRe(name)}\\s*=\\s*`, 'g');
+  const m = re.exec(text);
+  return m ? m.index + m[0].length : -1;
+}
+
+/** Resolve a expressão na posição `i`: objeto literal, alias ou identificador. */
+function resolveExpressionAt(text, i, seen) {
+  while (i < text.length && /\s/.test(text[i])) i++;
+  if (text[i] === '{') {
+    const entries = parseObjectEntries(text, i);
+    if (!entries) return null;
+    const map = new Map();
+    for (const e of entries) {
+      if (e.kind === 'pair' && typeof e.value === 'string') map.set(e.key, e.value);
+      else if (e.kind === 'pair' && e.inlineStart !== undefined) {
+        const inner = resolveExpressionAt(text, e.inlineStart, new Set(seen));
+        if (inner) for (const [k, v] of inner) if (!map.has(k)) map.set(k, v);
+      } else if (e.kind === 'pair' && e.expr) {
+        const inner = resolveIdentifier(text, e.expr, new Set(seen));
+        if (inner) for (const [k, v] of inner) if (!map.has(k)) map.set(k, v);
+      } else if (e.kind === 'spread' && e.name) {
+        const inner = resolveIdentifier(text, e.name, new Set(seen));
+        if (inner) for (const [k, v] of inner) if (!map.has(k)) map.set(k, v);
+      } else if (e.kind === 'shorthand') {
+        const inner = resolveIdentifier(text, e.name, new Set(seen));
+        if (inner) for (const [k, v] of inner) if (!map.has(k)) map.set(k, v);
+      }
+    }
+    return map;
+  }
+  const m = /^([A-Za-z_$][\w$]*)\s*$/.exec(text.slice(i, i + 200).split(/[,;}\n]/)[0] ?? '');
+  if (m) return resolveIdentifier(text, m[1], seen);
+  return null;
+}
+
+/** Segue a cadeia `const NAME = ...` até um objeto literal. */
 function resolveIdentifier(text, name, seen = new Set()) {
+  if (!/^[A-Za-z_$][\w$]*$/.test(name)) return null;
   if (seen.has(name)) return null;
   seen.add(name);
-  const decl = new RegExp(`(?:const|let|var)\\s+${name.replace(/\$/g, '\\$')}\\s*=\\s*(\\{)`);
-  const d = decl.exec(text);
-  if (!d) return null;
-  const entries = parseObjectEntries(text, d.index + d[0].length - 1);
-  if (!entries) return null;
-  const map = new Map();
-  for (const e of entries) {
-    if (e.kind === 'pair' && typeof e.value === 'string') map.set(e.key, e.value);
-    else if (e.kind === 'spread' && e.name) {
-      const inner = resolveIdentifier(text, e.name, seen);
-      if (inner) for (const [k, v] of inner) if (!map.has(k)) map.set(k, v);
-    } else if (e.kind === 'shorthand') {
-      const inner = resolveIdentifier(text, e.name, new Set(seen));
-      if (inner) for (const [k, v] of inner) if (!map.has(k)) map.set(k, v);
-    }
-  }
-  return map;
+  const start = findDeclarationStart(text, name);
+  if (start < 0) return null;
+  return resolveExpressionAt(text, start, seen);
 }
 
 const enAll = new Map();
+const zhAll = new Map();
 const report = [];
 const files = walk(root);
 let registrations = 0;
@@ -174,17 +199,18 @@ for (const file of files) {
       continue;
     }
     for (const e of entries) {
-      const key = e.kind === 'pair' ? e.key : e.kind === 'shorthand' ? e.name : null;
-      if (!key || !/^(en|zh)/i.test(key)) continue;
-      const map = resolveIdentifier(text, key);
-      if (!map || map.size === 0) {
-        report.push({ file, pkg, ns, key, reason: 'dictionary not resolved' });
+      const lang = e.kind === 'pair' ? e.key : e.kind === 'shorthand' ? e.name : null;
+      if (!lang || !/^(en|zh)/i.test(lang)) continue;
+      const source = e.kind === 'pair'
+        ? (e.inlineStart !== undefined ? resolveExpressionAt(text, e.inlineStart, new Set()) : e.expr ? resolveIdentifier(text, e.expr) : null)
+        : resolveIdentifier(text, lang);
+      if (!source || source.size === 0) {
+        report.push({ file, pkg, ns, lang, reason: 'dictionary not resolved', expr: e.expr ?? null });
         continue;
       }
-      if (!/^en/i.test(key)) continue;
-      const target = enAll.get(ns) ?? new Map();
-      for (const [k, v] of map) if (!target.has(k)) target.set(k, v);
-      enAll.set(ns, target);
+      const target = (/^en/i.test(lang) ? enAll : zhAll).get(ns) ?? new Map();
+      for (const [k, v] of source) if (!target.has(k)) target.set(k, v);
+      (/^en/i.test(lang) ? enAll : zhAll).set(ns, target);
     }
   }
 }
@@ -193,10 +219,28 @@ const out = {};
 for (const [ns, map] of [...enAll.entries()].sort()) out[ns] = Object.fromEntries(map);
 const totalKeys = Object.values(out).reduce((n, o) => n + Object.keys(o).length, 0);
 const unique = new Set(Object.values(out).flatMap((o) => Object.values(o)));
+
+// O DSH exige dicionários zh/en com o mesmo conjunto de chaves: divergência = extração errada.
+const keySetProblems = [];
+for (const [ns, enMap] of enAll) {
+  const zhMap = zhAll.get(ns);
+  if (!zhMap) {
+    keySetProblems.push(`${ns}: sem dicionário zh`);
+    continue;
+  }
+  const only = [...enMap.keys()].filter((k) => !zhMap.has(k));
+  const missing = [...zhMap.keys()].filter((k) => !enMap.has(k));
+  if (only.length || missing.length) {
+    keySetProblems.push(`${ns}: en-only=${only.length} zh-only=${missing.length}`);
+  }
+}
+
 writeFileSync(outEn, JSON.stringify(out, null, 2));
-writeFileSync(outReport, JSON.stringify(report, null, 2));
-console.log(`bundles scanned: ${files.length}`);
-console.log(`registrations: ${registrations}`);
-console.log(`namespaces: ${Object.keys(out).length}, keys: ${totalKeys}, unique strings: ${unique.size}`);
-console.log(`unresolved entries: ${report.length}`);
-for (const r of report) console.log(`  ${r.pkg} | ${r.ns} | ${r.key ?? ''} | ${r.reason}`);
+writeFileSync(outReport, JSON.stringify({ report, keySetProblems }, null, 2));
+console.log(`bundles varridos: ${files.length}`);
+console.log(`registros: ${registrations}`);
+console.log(`namespaces: ${Object.keys(out).length}, chaves: ${totalKeys}, textos únicos: ${unique.size}`);
+console.log(`entradas não resolvidas: ${report.length}`);
+for (const r of report) console.log(`  ! ${r.pkg} | ${r.ns} | ${r.lang ?? ''} | ${r.reason}`);
+console.log(`divergências zh/en: ${keySetProblems.length}`);
+for (const p of keySetProblems) console.log(`  ~ ${p}`);

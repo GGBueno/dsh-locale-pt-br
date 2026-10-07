@@ -8,9 +8,9 @@ Instalado, ele adiciona **Português (Brasil)** à linha nativa de idioma do DSH
 |---|---|
 | Idioma | `pt-BR` — Português (Brasil) |
 | Namespaces | 57 |
-| Chaves | 2.695 |
-| Traduzidas | 2.503 |
-| Iguais ao inglês de propósito (siglas, marcas, teclas, tokens) | 191 |
+| Chaves | 2.592 |
+| Traduzidas | 2.410 |
+| Iguais ao inglês de propósito (siglas, marcas, teclas, tokens) | 181 |
 | Desenvolvido contra | dsh `0.2.0-rc.2` |
 | Licença | MIT |
 
@@ -57,6 +57,7 @@ A UI de seleção, a persistência, `<html lang>`, o evento `locale/change` e o 
 | `locale/en.json` | Inventário das chaves em inglês da versão-alvo do DSH |
 | `tools/build.mjs` | Valida e gera `client.js` + `coverage.json` |
 | `tools/verify-client.mjs` | Confere o contrato do módulo sem instalar |
+| `tools/verify-runtime.mjs` | Integração contra o `LocaleRuntime` real do DSH (catálogo, ativação, traduções, fallback) |
 | `tools/extract-en.mjs` | Reextrai o inventário em inglês de uma instalação do DSH |
 
 ## Atualizar para uma nova versão do DSH
@@ -73,7 +74,14 @@ node tools/build.mjs
 node tools/verify-client.mjs
 ```
 
-Os passos 1 e 3 não precisam de DSH em execução; só o `verify-client.mjs` carrega o `client.js` num `window.__ModuleLoader__` simulado.
+Para conferir a integração contra o serviço de locale real do DSH (lê o bundle de dentro do `app.asar`, não instala nada):
+
+```powershell
+$env:ELECTRON_RUN_AS_NODE=1
+& "<instalação>\DeepSeek Harness.exe" --expose-internals tools/verify-runtime.mjs
+```
+
+Os passos 1 e 3 não precisam de DSH em execução; o `verify-client.mjs` carrega o `client.js` num `window.__ModuleLoader__` simulado, e o `verify-runtime.mjs` sobe o `LocaleRuntime` de verdade em Node (Electron em modo Node).
 
 ## Licença e atribuição
 
@@ -85,4 +93,4 @@ Os textos originais em inglês de `locale/en.json` são a cópia de interface do
 
 ## English summary
 
-Brazilian Portuguese language pack for the DeepSeek Harness web GUI. It registers the `pt-BR` locale through dsh's native language-pack API (`ctx.locale.addLanguage` + `ctx.locale.register`) and ships dictionaries for all 57 built-in namespaces (2,695 keys, 2,503 translated). Untranslated keys fall back to English per key. Install with `dsh plugin add`, then pick **Português (Brasil)** in Settings → General → Language. MIT licensed; see [`coverage.json`](./coverage.json) for the coverage report.
+Brazilian Portuguese language pack for the DeepSeek Harness web GUI. It registers the `pt-BR` locale through dsh's native language-pack API (`ctx.locale.addLanguage` + `ctx.locale.register`) and ships dictionaries for all 57 built-in namespaces (2,592 keys, 2,410 translated). Untranslated keys fall back to English per key. Install with `dsh plugin add`, then pick **Português (Brasil)** in Settings → General → Language. MIT licensed; see [`coverage.json`](./coverage.json) for the coverage report.
