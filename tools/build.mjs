@@ -55,10 +55,17 @@ for (const ns of enNamespaces) {
   }
 }
 
-const body = JSON.stringify(dicts).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-const client = `// ${PACKAGE_NAME} — metade Client: registra o idioma pt-BR e seus dicionários
-// no serviço nativo de locale do DeepSeek Harness.
-// Arquivo gerado por tools/build.mjs; edite locale/pt-BR.json, não este arquivo.
+// O bundle sai em ASCII puro: todo caractere não-ASCII vira escape \uXXXX.
+// Assim a acentuação não depende de nenhuma camada de entrega respeitar UTF-8 —
+// se algum intermediário decodificar os bytes como Latin-1, a string em memória
+// continua correta.
+const asciiSafe = (text) => text.replace(/[^\x20-\x7E]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`);
+const body = asciiSafe(JSON.stringify(dicts));
+const client = `// ${PACKAGE_NAME} - metade Client: registra o idioma pt-BR e seus dicionarios
+// no servico nativo de locale do DeepSeek Harness.
+// Arquivo gerado por tools/build.mjs; edite locale/pt-BR.json, nao este arquivo.
+// ASCII puro de proposito: a acentuacao viaja como escape \\uXXXX, entao nao
+// depende de nenhuma camada intermediaria respeitar UTF-8.
 window.__ModuleLoader__.load({
   id: "${PACKAGE_NAME}",
   factory: (require) => {
@@ -67,9 +74,9 @@ window.__ModuleLoader__.load({
     Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 
     var LOCALE_ID = "${LOCALE_ID}";
-    var LOCALE_LABEL = "${LOCALE_LABEL}";
+    var LOCALE_LABEL = "${asciiSafe(LOCALE_LABEL)}";
 
-    /** Dicionários por namespace; chave ausente cai no inglês pela cadeia de fallback. */
+    /** Dicionarios por namespace; chave ausente cai no ingles pela cadeia de fallback. */
     var DICTS = ${body};
 
     function apply(ctx) {
@@ -93,6 +100,9 @@ window.__ModuleLoader__.load({
 });
 `;
 
+const nonAsciiBytes = [...client].filter((char) => char.charCodeAt(0) > 0x7f).length;
+if (nonAsciiBytes > 0) problems.push(`o bundle contém ${nonAsciiBytes} caractere(s) não-ASCII`);
+
 writeFileSync(join(root, 'client.js'), client);
 writeFileSync(
   join(root, 'coverage.json'),
@@ -108,6 +118,7 @@ writeFileSync(
       problems: problems.length,
       problemList: problems.slice(0, 200),
       identicalKeyList: incomplete.slice(0, 500),
+      asciiOnly: nonAsciiBytes === 0,
     },
     null,
     2,
@@ -120,5 +131,5 @@ console.log(`traduzidas: ${translated} (${((translated / total) * 100).toFixed(2
 console.log(`iguais ao inglês (siglas/marcas/tokens): ${identical}`);
 console.log(`problemas: ${problems.length}`);
 for (const p of problems.slice(0, 20)) console.log(`  - ${p}`);
-console.log(`client.js: ${client.length} bytes`);
+console.log(`client.js: ${client.length} bytes | ASCII puro: ${nonAsciiBytes === 0}`);
 if (problems.length > 0) process.exitCode = 1;

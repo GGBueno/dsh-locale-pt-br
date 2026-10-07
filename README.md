@@ -46,6 +46,8 @@ A UI de seleção, a persistência, `<html lang>`, o evento `locale/change` e o 
 
 **Sem `peerDependencies` de propósito:** o gerenciador de plugins do DSH recusa a instalação quando um peer `@deepseek-ai/dsh-*` não satisfaz a versão em execução (foi o que aconteceu com pacotes de idioma que declaram `^0.1.x`). Este pacote não declara peer nenhum para continuar instalável em versões futuras; o preço é que chaves novas ou renomeadas aparecem em inglês até o dicionário ser atualizado.
 
+**O bundle é ASCII puro:** todo caractere não-ASCII sai como escape `\uXXXX` (`"Bônus creditado"` vira `"B\u00f4nus creditado"`). A acentuação deixa de depender de qualquer camada intermediária respeitar UTF-8 — se algum elo decodificar os bytes como Latin-1, a string em memória continua correta. `tools/build.mjs` falha se o arquivo gerado tiver qualquer byte acima de `0x7F`.
+
 ## Estrutura
 
 | Caminho | Papel |
@@ -58,6 +60,7 @@ A UI de seleção, a persistência, `<html lang>`, o evento `locale/change` e o 
 | `tools/build.mjs` | Valida e gera `client.js` + `coverage.json` |
 | `tools/verify-client.mjs` | Confere o contrato do módulo sem instalar |
 | `tools/verify-runtime.mjs` | Integração contra o `LocaleRuntime` real do DSH (catálogo, ativação, traduções, fallback) |
+| `tools/probe-served.mjs` | Baixa o módulo como o navegador o recebe e confere o conteúdo no fio |
 | `tools/extract-en.mjs` | Reextrai o inventário em inglês de uma instalação do DSH |
 
 ## Atualizar para uma nova versão do DSH

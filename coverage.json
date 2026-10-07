@@ -156,5 +156,6 @@
     "workflowRun/run.title",
     "workspace/orderBy.manual",
     "workspace/time.minutes"
-  ]
+  ],
+  "asciiOnly": true
 }
