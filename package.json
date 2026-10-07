@@ -1,0 +1,51 @@
+{
+  "name": "dsh-locale-pt-br",
+  "version": "1.0.0",
+  "description": "Pacote de idioma português do Brasil para a interface web do DeepSeek Harness (dsh). | Brazilian Portuguese language pack for the DeepSeek Harness web GUI.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "i18n",
+    "l10n",
+    "locale",
+    "language-pack",
+    "portuguese",
+    "pt-br",
+    "brazilian-portuguese"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "inject": ["@deepseek-ai/dsh-client-locale"]
+    }
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GGBueno/dsh-locale-pt-br.git"
+  },
+  "homepage": "https://github.com/GGBueno/dsh-locale-pt-br#readme",
+  "bugs": {
+    "url": "https://github.com/GGBueno/dsh-locale-pt-br/issues"
+  }
+}

@@ -1,0 +1,8 @@
+# Insere o pacote de idioma pt-BR na composição do perfil.
+# A metade Host não faz nada; a metade Client registra o idioma e os
+# dicionários pelo serviço nativo `ctx.locale` (addLanguage + register),
+# então "Português (Brasil)" aparece sozinho na linha
+# Configurações → Geral → Idioma, e a escolha é persistida pelo próprio DSH.
+- insert:
+    - id: dsh-locale-pt-br
+      name: 'dsh-locale-pt-br'
